@@ -128,10 +128,82 @@ class LinearRe():
     # plt.scatter(sample["total_rooms"], sample["median_house_value"])
     # plt.show()
 
+    #输入为多个特征时，需要将特征列配置为独立函数的代码模块化
+    def construct_feature_columns(self,input_features):
+        return set([tf.feature_column.numeric_column(my_feature) for my_feature in input_features])
+
+    def train_model_moreFeatures(self, learning_rate, steps, batch_size,
+                                 training_examples, training_targets, validation_examples,validation_targets):
+        """
+
+        :param learning_rate:
+        :param step:
+        :param batch_size:
+        :param training_examples:
+        :param training_targets:
+        :param validation_examples:
+        :param validation_targets:
+        :return:
+        """
+        periods = 10
+        steps_per_period = steps / periods
+        #创建LR object
+        my_optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
+        my_optimizer = tf.contrib.estimator.clip_gradients_by_norm(my_optimizer, 5.0)
+        linear_regressor = tf.estimator.LinearRegressor(
+            feature_columns=self.construct_feature_columns(training_examples),
+            optimizer=my_optimizer
+        )
+        #创建输入函数
+        training_input_fn = lambda :self.my_input_fn(training_examples,
+                                                     training_targets["median_house_value"],batch_size=batch_size)
+
+        predict_training_input_fn =  lambda :self.my_input_fn(training_examples,training_targets["median_house_value"],
+                                                              shuffle=False, num_epochs=1)
+        predict_validation_input_fn =  lambda :self.my_input_fn(validation_examples,validation_targets["median_house_value"]
+                                                                , shuffle=False, num_epochs=1)
+        print("Training model...")
+        print("RMSE (on training data):")
+        training_rmse = []
+        validation_rmse = []
+        for period in range(0, periods):
+            linear_regressor.train(
+                input_fn=training_input_fn,
+                steps=steps_per_period,
+            )
+            # 计算预测
+            training_predictions = linear_regressor.predict(input_fn=predict_training_input_fn)
+            training_predictions = np.array([item['predictions'][0] for item in training_predictions])
+            validation_predictions = linear_regressor.predict(input_fn=predict_validation_input_fn)
+            validation_predictions = np.array([item['predictions'][0] for item in validation_predictions])
+
+            training_root_mean_squared_error = math.sqrt(
+                metrics.mean_squared_error(training_predictions, training_targets))
+            validation_root_mean_squared_error = math.sqrt(
+                metrics.mean_squared_error(validation_predictions, validation_targets))
+            # Occasionally print the current loss.
+            print("  period %02d : %0.2f" % (period, training_root_mean_squared_error))
+            # Add the loss metrics from this period to our list.
+            training_rmse.append(training_root_mean_squared_error)
+            validation_rmse.append(validation_root_mean_squared_error)
+
+            print("Model training finished.")
+
+        # Output a graph of loss metrics over periods.
+        plt.ylabel("RMSE")
+        plt.xlabel("Periods")
+        plt.title("Root Mean Squared Error vs. Periods")
+        plt.tight_layout()
+        plt.plot(training_rmse, label="training")
+        plt.plot(validation_rmse, label="validation")
+        plt.legend()
+        plt.show()
+
+        return linear_regressor
     #调整模型超参数
     def train_model(self,learning_rate, steps, batch_size, input_feature="total_rooms"):
         """
-        训练模型，寻找最好的模型超参数
+        训练模型，寻找最好的模型超参数,一个特征
         :param learning_rate: 学习率
         :param steps: 步长
         :param batch_size:每一次训练模型输入数量
@@ -218,5 +290,6 @@ class LinearRe():
 if __name__=='__main__':
     Lr = LinearRe()
     a = Lr.train_model(learning_rate=0.00002, steps=500, batch_size=5)
+
 
 
